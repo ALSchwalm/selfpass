@@ -1,6 +1,8 @@
 import sqlite3
 import os
+import random
 from .utils import *
+from .crypto import expand_password
 from collections import namedtuple
 
 
@@ -22,17 +24,33 @@ class Store(object):
     def _init_db(self):
         conn = sqlite3.connect(self.path)
         conn.cursor().executescript("""
-        CREATE TABLE users (username TEXT,
-                            id TEXT PRIMARY KEY,
-                            access_key TEXT,
-                            keystore TEXT)
+        CREATE TABLE users (
+            user_id  TEXT PRIMARY KEY,
+            username TEXT,
+            keystore TEXT
+        );
+
+        CREATE TABLE active_keys (
+            user_id       TEXT,
+            access_key    TEXT,
+            access_key_id INTEGER PRIMARY KEY,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
+
+        CREATE TABLE devices (
+            user_id     TEXT,
+            device_id   TEXT,
+            device_name TEXT,
+            public_key  TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
         """)
         conn.commit()
 
     @connected
     def get_user_by_id(self, conn, cursor, id):
         res = cursor.execute("""
-        SELECT username, id, access_key, keystore FROM users WHERE id = ?
+        SELECT username, user_id, access_key, keystore FROM users WHERE id = ?
         """, (id,))
 
         if res is None:
@@ -43,7 +61,7 @@ class Store(object):
     @connected
     def get_user_by_name(self, conn, cursor, username):
         res = cursor.execute("""
-        SELECT username, id, access_key, keystore FROM users WHERE username = ?
+        SELECT username, user_id, keystore FROM users WHERE username = ?
         """, (username,)).fetchone()
 
         if res is None:
@@ -52,18 +70,22 @@ class Store(object):
 
     @connected
     def get_keystore_by_id(self, conn, cursor, id):
-        return self.get_user_by_id(id)[3]
+        return self.get_user_by_id(id)[2]
 
     @connected
-    def update_user_access_key(self, conn, cursor, id, new_key):
-        cursor.execute("""
-        UPDATE users SET access_key = ? WHERE id = ?
-        """, (new_key, id))
+    def get_access_key_by_id(self, conn, cursor, user_id, access_key_id):
+        print(user_id, access_key_id)
+        res = cursor.execute("""
+        SELECT access_key FROM active_keys WHERE
+        user_id = ? AND access_key_id = ?
+        """, (user_id, access_key_id))
+
+        return res.fetchone()[0]
 
     @connected
     def update_user_keystore(self, conn, cursor, id, keystore):
         cursor.execute("""
-        UPDATE users SET keystore = ? WHERE id = ?
+        UPDATE users SET keystore = ? WHERE user_id = ?
         """, (keystore, id))
 
     @connected
@@ -76,20 +98,13 @@ class Store(object):
         if res.fetchone()[0] > 0:
             raise ValueError("User '{}' already exists".format(username))
 
-        id = generate_nonce()
-        access_key = generate_nonce()
+        id = b64_hash(username)
 
-        conn.commit()
+        cursor.execute("""
+        INSERT INTO users VALUES(?, ?, NULL);
+        """, (id, username))
 
-        res = cursor.execute("""
-        INSERT INTO users VALUES(?, ?, ?, NULL);
-        """, (username, id, access_key))
-
-        res = cursor.execute("""
-        SELECT id, access_key FROM users WHERE username = ?
-        """, (username,))
-
-        return res.fetchone()
+        return (id, username)
 
     @connected
     def remove_user(self, conn, cursor, username):
@@ -103,3 +118,46 @@ class Store(object):
         cursor.execute("""
         DELETE FROM users WHERE username = ?
         """, (username,))
+
+    @connected
+    def add_access_key(self, conn, cursor, user_id):
+        access_key = random_b32_bytes(15)
+
+        expanded_access_key = expand_password(access_key, user_id)
+        print("Expanded {} and {} into {}".format(access_key, user_id, expanded_access_key))
+
+        #TODO expire this eventually
+        cursor.execute("""
+        INSERT INTO active_keys VALUES(?, ?, NULL);
+        """, (user_id, expanded_access_key))
+
+        #TODO these should be random and independent for each user (maybe)
+        key_id = cursor.lastrowid
+
+        return (access_key, key_id)
+
+    @connected
+    def register_device(self, conn, cursor,
+                        user_id, device_id, access_key, public_key):
+        res = cursor.execute("""
+        SELECT COUNT(*) FROM active_keys WHERE
+        access_key = ? AND user_id = ?
+        """, (access_key, user_id))
+
+        if res.fetchone()[0] == 0:
+            raise ValueError("No active access_key '{}' for user '{}'".format(
+                access_key, user_id))
+
+        cursor.execute("""
+        DELETE FROM active_keys WHERE access_key = ? AND user_id = ?
+        """, (access_key, user_id))
+
+        cursor.execute("""
+        INSERT INTO devices VALUES(?, ?, NULL, ?)
+        """, (user_id, device_id, public_key))
+
+    @connected
+    def unregister_device(self, conn, cursor, user_id, device_id):
+        cursor.execute("""
+        DELETE FROM devices WHERE user_id = ? AND device_id = ?
+        """, (user_id, device_id))

@@ -1,14 +1,21 @@
 import os
 import base64
+import hashlib
 
-def random_hex_bytes(count):
+def format_access_key(s, key_id):
+    parts = []
+    for i in range(0, len(s), 4):
+        parts.append(s[i:i+4])
+    return "{:02X}".format(key_id) + "-" + "-".join(parts)
+
+def random_b64_bytes(count):
     bytes = os.urandom(count)
-    return base64.b64encode(bytes)
+    return base64.b64encode(bytes).decode("utf-8")
 
-def generate_nonce():
-    nonce = random_hex_bytes(32)
-    return nonce.decode("utf-8")
+def random_b32_bytes(count):
+    bytes = os.urandom(count)
+    return base64.b32encode(bytes).decode("utf-8")
 
-def is_valid_nonce(nonce):
-    #TODO actually test this (just length I guess?)
-    return True
+def b64_hash(s):
+    hash = hashlib.sha256(s.encode("utf-8")).digest()
+    return base64.b64encode(hash).decode("utf-8")

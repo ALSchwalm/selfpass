@@ -26,13 +26,11 @@ def encrypt_as_user(user_id, access_key, plaintext):
         "tag": base64.b64encode(encryptor.tag).decode("utf-8")
     }
 
-def decrypt(db, ciphertext_json):
-    user = db.get_user_by_id(ciphertext_json["user_id"])
-    if user is None:
-        raise ValueError("No such id")
-    else:
-        username, id, access_key, keystore = user
-    key = base64.b64decode(access_key)
+def decryptSymmetric(db, ciphertext_json):
+    key = db.get_access_key_by_id(ciphertext_json["user_id"],
+                                  int(ciphertext_json["access_key_id"], 16))
+
+    print("Got access_key: {}".format(key))
 
     iv = base64.b64decode(ciphertext_json["iv"])
     tag = base64.b64decode(ciphertext_json["tag"])
@@ -44,7 +42,7 @@ def decrypt(db, ciphertext_json):
         default_backend()
     ).decryptor()
 
-    return user, decryptor.update(ciphertext) + decryptor.finalize()
+    return decryptor.update(ciphertext) + decryptor.finalize()
 
 VALID_REQUEST_METHODS = {
     "update-keystore",
@@ -71,15 +69,6 @@ def validate_request(request):
     return True, None
 
 def handle_request(db, js):
-    # First do the decryption on the crypto-layer and get the actual request
-    try:
-        user, payload = decrypt(db, js)
-        request = json.loads(payload.decode("utf-8"))
-    except Exception:
-        import traceback
-        traceback.print_exc()
-        return "", 204
-
 
     valid_status, reason = validate_request(request)
     if valid_status is False:
@@ -105,6 +94,16 @@ def handle_request(db, js):
 
     return encrypt_as_user(user[1], user[2], json.dumps(response).encode("utf-8"))
 
+def handle_pair_request(store, js):
+    # First do the decryption on the crypto-layer and get the actual request
+    try:
+        payload = decryptSymmetric(store, js)
+        request = json.loads(payload.decode("utf-8"))
+        print(request)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return "", 400
 
 def run(store):
     from flask import Flask, request, jsonify
@@ -116,6 +115,13 @@ def run(store):
     @external.route("/", methods=["POST"])
     def external_route():
         res = handle_request(store, request.get_json())
+        if isinstance(res, tuple):
+            return res
+        return jsonify(res)
+
+    @external.route("/pair", methods=["POST"])
+    def pair():
+        res = handle_pair_request(store, request.get_json())
         if isinstance(res, tuple):
             return res
         return jsonify(res)
