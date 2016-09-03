@@ -19,3 +19,6 @@ def random_b32_bytes(count):
 def b64_hash(s):
     hash = hashlib.sha256(s.encode("utf-8")).digest()
     return base64.b64encode(hash).decode("utf-8")
+
+def int_to_bytes(n):
+    return n.to_bytes((n.bit_length() + 7) // 8, 'big')

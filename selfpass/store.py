@@ -24,6 +24,12 @@ class Store(object):
     def _init_db(self):
         conn = sqlite3.connect(self.path)
         conn.cursor().executescript("""
+        CREATE TABLE server_keys (
+            public_x         TEXT,
+            public_y         TEXT,
+            private_number   TEXT
+        );
+
         CREATE TABLE users (
             user_id  TEXT PRIMARY KEY,
             username TEXT,
@@ -41,11 +47,51 @@ class Store(object):
             user_id     TEXT,
             device_id   TEXT,
             device_name TEXT,
-            public_key  TEXT,
+            public_x    TEXT,
+            public_y    TEXT,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         );
         """)
         conn.commit()
+
+    @connected
+    def update_server_keys(self, conn, cursor, public_key, private_key):
+
+        private_number = str(private_key.private_numbers().private_value)
+        public_x = str(public_key.public_numbers().x)
+        public_y = str(public_key.public_numbers().y)
+
+        res = cursor.execute("""
+        INSERT INTO server_keys VALUES(?, ?, ?);
+        """, (public_x, public_y, private_number))
+
+    @connected
+    def get_server_keys(self, conn, cursor):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.backends import default_backend
+
+        res = cursor.execute("""
+        SELECT public_x, public_y, private_number FROM server_keys
+        """, ())
+
+        public_x, public_y, private_number = map(int, res.fetchone())
+        public_numbers = ec.EllipticCurvePublicNumbers(public_x,
+                                                       public_y,
+                                                       ec.SECP521R1())
+        public_key = public_numbers.public_key(default_backend())
+
+        private_numbers = ec.EllipticCurvePrivateNumbers(private_number,
+                                                         public_numbers)
+        private_key = private_numbers.private_key(default_backend())
+        return public_key, private_key
+
+
+    @connected
+    def have_server_keys(self, conn, cursor):
+        res = cursor.execute("""
+        SELECT COUNT(*) FROM server_keys
+        """, ())
+        return res.fetchone()[0] != 0
 
     @connected
     def get_user_by_id(self, conn, cursor, id):

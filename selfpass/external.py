@@ -7,9 +7,8 @@ from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
 )
 
-def encrypt_as_user(user_id, access_key, plaintext):
+def symmetric_encrypt(key, plaintext):
     iv = os.urandom(12)
-    key = base64.b64decode(access_key)
 
     encryptor = Cipher(
         algorithms.AES(key),
@@ -21,16 +20,13 @@ def encrypt_as_user(user_id, access_key, plaintext):
 
     return {
         "iv": base64.b64encode(iv).decode("utf-8"),
-        "user_id": user_id,
         "ciphertext": base64.b64encode(ciphertext).decode("utf-8"),
         "tag": base64.b64encode(encryptor.tag).decode("utf-8")
     }
 
-def decryptSymmetric(db, ciphertext_json):
+def symmetric_decrypt(db, ciphertext_json):
     key = db.get_access_key_by_id(ciphertext_json["user_id"],
                                   int(ciphertext_json["access_key_id"], 16))
-
-    print("Got access_key: {}".format(key))
 
     iv = base64.b64decode(ciphertext_json["iv"])
     tag = base64.b64decode(ciphertext_json["tag"])
@@ -42,7 +38,7 @@ def decryptSymmetric(db, ciphertext_json):
         default_backend()
     ).decryptor()
 
-    return decryptor.update(ciphertext) + decryptor.finalize()
+    return key, decryptor.update(ciphertext) + decryptor.finalize()
 
 VALID_REQUEST_METHODS = {
     "update-keystore",
@@ -97,9 +93,24 @@ def handle_request(db, js):
 def handle_pair_request(store, js):
     # First do the decryption on the crypto-layer and get the actual request
     try:
-        payload = decryptSymmetric(store, js)
+        key, payload = symmetric_decrypt(store, js)
         request = json.loads(payload.decode("utf-8"))
-        print(request)
+
+        if request["request"] == "register-device":
+            pub, _ = store.get_server_keys()
+
+            x = pub.public_numbers().x
+            y = pub.public_numbers().y
+            print(x)
+            print(y)
+
+            payload = json.dumps({
+                "ecc": {
+                    "x": base64.b64encode(int_to_bytes(x)).decode("utf-8"),
+                    "y": base64.b64encode(int_to_bytes(y)).decode("utf-8")
+                }
+            }).encode("utf-8")
+            return symmetric_encrypt(key, payload)
     except Exception:
         import traceback
         traceback.print_exc()
