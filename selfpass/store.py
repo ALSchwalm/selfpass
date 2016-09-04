@@ -184,7 +184,7 @@ class Store(object):
 
     @connected
     def register_device(self, conn, cursor,
-                        user_id, device_id, access_key, public_key):
+                        user_id, device_id, access_key, device_key):
         res = cursor.execute("""
         SELECT COUNT(*) FROM active_keys WHERE
         access_key = ? AND user_id = ?
@@ -194,13 +194,16 @@ class Store(object):
             raise ValueError("No active access_key '{}' for user '{}'".format(
                 access_key, user_id))
 
+        device_x = str(device_key.public_numbers().x)
+        device_y = str(device_key.public_numbers().y)
+
         cursor.execute("""
         DELETE FROM active_keys WHERE access_key = ? AND user_id = ?
         """, (access_key, user_id))
 
         cursor.execute("""
-        INSERT INTO devices VALUES(?, ?, NULL, ?)
-        """, (user_id, device_id, public_key))
+        INSERT INTO devices VALUES(?, ?, NULL, ?, ?)
+        """, (user_id, device_id, device_x, device_y))
 
     @connected
     def unregister_device(self, conn, cursor, user_id, device_id):

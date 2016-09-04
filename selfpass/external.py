@@ -2,6 +2,7 @@ import os
 import base64
 import json
 from .utils import *
+from .crypto import *
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
@@ -40,55 +41,9 @@ def symmetric_decrypt(db, ciphertext_json):
 
     return key, decryptor.update(ciphertext) + decryptor.finalize()
 
-VALID_REQUEST_METHODS = {
-    "update-keystore",
-    "retrieve-keystore"
-}
+def handle_request(store, js):
+    pass
 
-def validate_request(request):
-
-    # All requests must have some method
-    if "request" not in request:
-        return False, "Missing request method"
-
-    if request["request"] not in VALID_REQUEST_METHODS:
-        return False, "Unknown request method"
-
-    # All requests must have a request nonce
-    if "request-nonce" not in request:
-        return False, "No request-nonce"
-
-    # Request nonce's must be valid
-    if not is_valid_nonce(request["request-nonce"]):
-        return False, "Invalid request-nonce"
-
-    return True, None
-
-def handle_request(db, js):
-
-    valid_status, reason = validate_request(request)
-    if valid_status is False:
-        return "", 204
-
-    method = request["request"]
-
-    if method == "retrieve-keystore":
-        store = db.get_keystore_by_id(user[1])
-        response = {
-            "response": "OK",
-            "request-nonce": request["request-nonce"],
-            "data": store
-        }
-    elif method == "update-keystore":
-        db.update_user_keystore(user[1], request["data"])
-        response = {
-            "response": "OK",
-            "request-nonce": request["request-nonce"],
-        }
-    else:
-        response = ""
-
-    return encrypt_as_user(user[1], user[2], json.dumps(response).encode("utf-8"))
 
 def handle_pair_request(store, js):
     # First do the decryption on the crypto-layer and get the actual request
@@ -97,20 +52,20 @@ def handle_pair_request(store, js):
         request = json.loads(payload.decode("utf-8"))
 
         if request["request"] == "register-device":
+            device_key = public_key_from_dict(request["public_key"])
+
+            store.register_device(js["user_id"], request["device_id"], key,
+                                  device_key)
+
             pub, _ = store.get_server_keys()
 
-            x = pub.public_numbers().x
-            y = pub.public_numbers().y
-            print(x)
-            print(y)
-
             payload = json.dumps({
-                "ecc": {
-                    "x": base64.b64encode(int_to_bytes(x)).decode("utf-8"),
-                    "y": base64.b64encode(int_to_bytes(y)).decode("utf-8")
-                }
+                "public_key": public_key_to_dict(pub)
             }).encode("utf-8")
+
             return symmetric_encrypt(key, payload)
+        else:
+            return "", 400
     except Exception:
         import traceback
         traceback.print_exc()
