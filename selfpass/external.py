@@ -4,6 +4,8 @@ import json
 from .utils import *
 from .crypto import *
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.ciphers import (
     Cipher, algorithms, modes
 )
@@ -41,11 +43,36 @@ def symmetric_decrypt(db, ciphertext_json):
 
     return key, decryptor.update(ciphertext) + decryptor.finalize()
 
+
 def handle_request(store, js):
     pass
 
+def handle_hello(store, js):
+    try:
+        pub = store.get_device_public_key(js["user_id"], js["device_id"])
+        print("public_key:", public_key_to_dict(pub))
 
-def handle_pair_request(store, js):
+        signature = signature_from_dict(js["signature"])
+
+        payload = js["payload"]
+
+        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
+        digest.update(payload.encode("utf-8"))
+        print("Computed hash: {}".format(base64.b64encode(digest.finalize())))
+
+        #TODO: just use verify once cryptography 1.5 is in pip
+        verifier = pub.verifier(signature, ec.ECDSA(hashes.SHA256()))
+        verifier.update(payload.encode("utf-8"))
+        verifier.verify()
+
+        print("verified")
+        return "", 200
+    except:
+        import traceback
+        traceback.print_exc()
+        return "", 400
+
+def handle_pair(store, js):
     # First do the decryption on the crypto-layer and get the actual request
     try:
         key, payload = symmetric_decrypt(store, js)
@@ -53,6 +80,7 @@ def handle_pair_request(store, js):
 
         if request["request"] == "register-device":
             device_key = public_key_from_dict(request["public_key"])
+            print("Registered device key: {}".format(request["public_key"]))
 
             store.register_device(js["user_id"], request["device_id"], key,
                                   device_key)
@@ -78,16 +106,23 @@ def run(store):
     external = Flask("selfpass-external")
     CORS(external)
 
-    @external.route("/", methods=["POST"])
-    def external_route():
+    @external.route("/request", methods=["POST"])
+    def request_route():
         res = handle_request(store, request.get_json())
         if isinstance(res, tuple):
             return res
         return jsonify(res)
 
+    @external.route("/hello", methods=["POST"])
+    def hello_route():
+        res = handle_hello(store, request.get_json())
+        if isinstance(res, tuple):
+            return res
+        return jsonify(res)
+
     @external.route("/pair", methods=["POST"])
-    def pair():
-        res = handle_pair_request(store, request.get_json())
+    def pair_route():
+        res = handle_pair(store, request.get_json())
         if isinstance(res, tuple):
             return res
         return jsonify(res)

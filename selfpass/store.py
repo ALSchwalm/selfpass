@@ -77,7 +77,7 @@ class Store(object):
         public_x, public_y, private_number = map(int, res.fetchone())
         public_numbers = ec.EllipticCurvePublicNumbers(public_x,
                                                        public_y,
-                                                       ec.SECP521R1())
+                                                       ec.SECP384R1())
         public_key = public_numbers.public_key(default_backend())
 
         private_numbers = ec.EllipticCurvePrivateNumbers(private_number,
@@ -120,7 +120,6 @@ class Store(object):
 
     @connected
     def get_access_key_by_id(self, conn, cursor, user_id, access_key_id):
-        print(user_id, access_key_id)
         res = cursor.execute("""
         SELECT access_key FROM active_keys WHERE
         user_id = ? AND access_key_id = ?
@@ -170,7 +169,6 @@ class Store(object):
         access_key = random_b32_bytes(15)
 
         expanded_access_key = expand_password(access_key, user_id)
-        print("Expanded {} and {} into {}".format(access_key, user_id, expanded_access_key))
 
         #TODO expire this eventually
         cursor.execute("""
@@ -181,6 +179,22 @@ class Store(object):
         key_id = cursor.lastrowid
 
         return (access_key, key_id)
+
+    @connected
+    def get_device_public_key(self, conn, cursor, user_id, device_id):
+        from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.backends import default_backend
+
+        res = cursor.execute("""
+        SELECT public_x, public_y FROM devices WHERE user_id = ? AND device_id = ?
+        """, (user_id, device_id))
+
+        public_x, public_y = map(int, res.fetchone())
+        public_numbers = ec.EllipticCurvePublicNumbers(public_x,
+                                                       public_y,
+                                                       ec.SECP384R1())
+        return public_numbers.public_key(default_backend())
+
 
     @connected
     def register_device(self, conn, cursor,
