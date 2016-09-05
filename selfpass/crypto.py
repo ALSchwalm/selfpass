@@ -1,4 +1,5 @@
 import base64
+import os
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.hazmat.primitives.asymmetric import utils
@@ -15,7 +16,7 @@ def public_key_to_dict(public_key):
         "y": base64.b64encode(int_to_bytes(y)).decode("utf-8")
     }
 
-# FIXME: currently hard coded for SECP521R1
+# FIXME: currently hard coded for SECP384R1
 def public_key_from_dict(public_key_json):
     x = int.from_bytes(base64.b64decode(public_key_json["x"]), "big")
     y = int.from_bytes(base64.b64decode(public_key_json["y"]), "big")
@@ -30,7 +31,12 @@ def signature_from_dict(signature_json):
     return utils.encode_dss_signature(r, s)
 
 def signature_to_dict(signature):
-    pass
+    r, s = utils.decode_dss_signature(signature)
+    return {
+        "r": base64.b64encode(int_to_bytes(r)).decode("utf-8"),
+        "s": base64.b64encode(int_to_bytes(s)).decode("utf-8"),
+    }
+
 
 def expand_password(password, salt, length=32*8):
     kdf = PBKDF2HMAC(
@@ -42,7 +48,7 @@ def expand_password(password, salt, length=32*8):
     )
     return kdf.derive(password.encode("utf-8"))
 
-def generate_server_keys():
+def generate_key_pair():
     private_key = ec.generate_private_key(
         ec.SECP384R1(), default_backend()
     )
@@ -50,3 +56,6 @@ def generate_server_keys():
     public_key = private_key.public_key()
 
     return public_key, private_key
+
+def generate_session_id():
+    return base64.b64encode(os.urandom(32)).decode("utf-8")

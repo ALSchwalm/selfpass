@@ -49,24 +49,42 @@ def handle_request(store, js):
 
 def handle_hello(store, js):
     try:
-        pub = store.get_device_public_key(js["user_id"], js["device_id"])
-        print("public_key:", public_key_to_dict(pub))
-
+        client_pub = store.get_device_public_key(js["user_id"], js["device_id"])
         signature = signature_from_dict(js["signature"])
-
         payload = js["payload"]
-
-        digest = hashes.Hash(hashes.SHA256(), backend=default_backend())
-        digest.update(payload.encode("utf-8"))
-        print("Computed hash: {}".format(base64.b64encode(digest.finalize())))
+        decoded_payload = json.loads(base64.b64decode(payload).decode("utf-8"))
+        client_temp_pub = public_key_from_dict(decoded_payload["public_key"])
 
         #TODO: just use verify once cryptography 1.5 is in pip
-        verifier = pub.verifier(signature, ec.ECDSA(hashes.SHA256()))
+        verifier = client_pub.verifier(signature, ec.ECDSA(hashes.SHA256()))
         verifier.update(payload.encode("utf-8"))
         verifier.verify()
 
-        print("verified")
-        return "", 200
+        server_temp_pub, server_temp_priv = generate_key_pair()
+        session_key = server_temp_priv.exchange(ec.ECDH(), client_temp_pub)
+        session_id = generate_session_id()
+
+        store.add_session_key(session_id, session_key)
+
+        responsePayload = {
+            "public_key": public_key_to_dict(server_temp_pub)
+        }
+
+        encodedResponsePayload = base64.b64encode(
+            json.dumps(responsePayload).encode("utf-8"))
+
+        #TODO: just use sign once cryptography 1.5 is in pip
+        signer = server_temp_priv.signer(ec.ECDSA(hashes.SHA256()))
+        signer.update(encodedResponsePayload)
+        signature = signer.finalize()
+
+        message = {
+            "payload": encodedResponsePayload.decode("utf-8"),
+            "signature": signature_to_dict(signature),
+            "session_id": session_id
+        }
+
+        return message
     except:
         import traceback
         traceback.print_exc()

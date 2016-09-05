@@ -36,11 +36,16 @@ class Store(object):
             keystore TEXT
         );
 
-        CREATE TABLE active_keys (
+        CREATE TABLE access_keys (
             user_id       TEXT,
             access_key    TEXT,
             access_key_id INTEGER PRIMARY KEY,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
+        );
+
+        CREATE TABLE session_keys (
+            session_id    TEXT PRIMARY KEY,
+            session_key   TEXT
         );
 
         CREATE TABLE devices (
@@ -121,7 +126,7 @@ class Store(object):
     @connected
     def get_access_key_by_id(self, conn, cursor, user_id, access_key_id):
         res = cursor.execute("""
-        SELECT access_key FROM active_keys WHERE
+        SELECT access_key FROM access_keys WHERE
         user_id = ? AND access_key_id = ?
         """, (user_id, access_key_id))
 
@@ -172,7 +177,7 @@ class Store(object):
 
         #TODO expire this eventually
         cursor.execute("""
-        INSERT INTO active_keys VALUES(?, ?, NULL);
+        INSERT INTO access_keys VALUES(?, ?, NULL);
         """, (user_id, expanded_access_key))
 
         #TODO these should be random and independent for each user (maybe)
@@ -200,7 +205,7 @@ class Store(object):
     def register_device(self, conn, cursor,
                         user_id, device_id, access_key, device_key):
         res = cursor.execute("""
-        SELECT COUNT(*) FROM active_keys WHERE
+        SELECT COUNT(*) FROM access_keys WHERE
         access_key = ? AND user_id = ?
         """, (access_key, user_id))
 
@@ -212,7 +217,7 @@ class Store(object):
         device_y = str(device_key.public_numbers().y)
 
         cursor.execute("""
-        DELETE FROM active_keys WHERE access_key = ? AND user_id = ?
+        DELETE FROM access_keys WHERE access_key = ? AND user_id = ?
         """, (access_key, user_id))
 
         cursor.execute("""
@@ -224,3 +229,23 @@ class Store(object):
         cursor.execute("""
         DELETE FROM devices WHERE user_id = ? AND device_id = ?
         """, (user_id, device_id))
+
+    @connected
+    def add_session_key(self, conn, cursor, session_id, session_key):
+        cursor.execute("""
+        INSERT INTO session_keys VALUES(?, ?)
+        """, (session_id, session_key))
+
+    @connected
+    def get_session_key(self, conn, cursor, session_id):
+        res = cursor.execute("""
+        SELECT session_id FROM session_keys WHERE session_id = ?
+        """, (session_id,))
+
+        return res.fetchone()[0]
+
+    @connected
+    def remove_session_key(self, conn, cursor, session_id):
+        cursor.execute("""
+        DELETE FROM session_keys WHERE session_id = ?
+        """, (sesson_id,))
