@@ -7,19 +7,23 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.backends import default_backend
 from .utils import *
 
-def public_key_to_dict(public_key):
+def public_key_to_jwk(public_key):
     x = public_key.public_numbers().x
     y = public_key.public_numbers().y
 
     return {
-        "x": base64.b64encode(int_to_bytes(x)).decode("utf-8"),
-        "y": base64.b64encode(int_to_bytes(y)).decode("utf-8")
+        "x": b64encodeJWK(int_to_bytes(x)).decode("utf-8"),
+        "y": b64encodeJWK(int_to_bytes(y)).decode("utf-8"),
+        "kty": "EC",
+        "ext": True,
+        "key_ops": ["verify"],
+        "crv": "P-384"
     }
 
 # FIXME: currently hard coded for SECP384R1
-def public_key_from_dict(public_key_json):
-    x = int.from_bytes(base64.b64decode(public_key_json["x"]), "big")
-    y = int.from_bytes(base64.b64decode(public_key_json["y"]), "big")
+def public_key_from_jwk(public_key_json):
+    x = int.from_bytes(b64decodeJWK(public_key_json["x"]), "big")
+    y = int.from_bytes(b64decodeJWK(public_key_json["y"]), "big")
 
     public_numbers = ec.EllipticCurvePublicNumbers(x, y,
                                                    ec.SECP384R1())

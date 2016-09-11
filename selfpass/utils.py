@@ -22,3 +22,11 @@ def b64_hash(s):
 
 def int_to_bytes(n):
     return n.to_bytes((n.bit_length() + 7) // 8, 'big')
+
+def b64decodeJWK(encoded):
+    padding = len(encoded) % 4
+    encoded += "=" * padding
+    return base64.urlsafe_b64decode(encoded)
+
+def b64encodeJWK(bytes):
+    return base64.urlsafe_b64encode(bytes).strip(b"=")

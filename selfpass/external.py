@@ -62,19 +62,22 @@ def handle_hello(store, js):
 
         server_temp_pub, server_temp_priv = generate_key_pair()
         session_key = server_temp_priv.exchange(ec.ECDH(), client_temp_pub)
+        print(base64.b64encode(session_key))
         session_id = generate_session_id()
 
         store.add_session_key(session_id, session_key)
 
         responsePayload = {
-            "public_key": public_key_to_dict(server_temp_pub)
+            "public_key": public_key_to_jwk(server_temp_pub)
         }
 
         encodedResponsePayload = base64.b64encode(
             json.dumps(responsePayload).encode("utf-8"))
 
+        _, server_priv = store.get_server_keys()
+
         #TODO: just use sign once cryptography 1.5 is in pip
-        signer = server_temp_priv.signer(ec.ECDSA(hashes.SHA256()))
+        signer = server_priv.signer(ec.ECDSA(hashes.SHA256()))
         signer.update(encodedResponsePayload)
         signature = signer.finalize()
 
@@ -97,7 +100,7 @@ def handle_pair(store, js):
         request = json.loads(payload.decode("utf-8"))
 
         if request["request"] == "register-device":
-            device_key = public_key_from_dict(request["public_key"])
+            device_key = public_key_from_jwk(request["public_key"])
             print("Registered device key: {}".format(request["public_key"]))
 
             store.register_device(js["user_id"], request["device_id"], key,
@@ -106,7 +109,7 @@ def handle_pair(store, js):
             pub, _ = store.get_server_keys()
 
             payload = json.dumps({
-                "public_key": public_key_to_dict(pub)
+                "public_key": public_key_to_jwk(pub)
             }).encode("utf-8")
 
             return symmetric_encrypt(key, payload)
