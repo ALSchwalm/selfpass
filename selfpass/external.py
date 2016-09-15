@@ -52,13 +52,14 @@ def handle_hello(store, js):
         client_pub = store.get_device_public_key(js["user_id"], js["device_id"])
         signature = signature_from_dict(js["signature"])
         payload = js["payload"]
-        decoded_payload = json.loads(base64.b64decode(payload).decode("utf-8"))
-        client_temp_pub = public_key_from_dict(decoded_payload["public_key"])
 
         #TODO: just use verify once cryptography 1.5 is in pip
         verifier = client_pub.verifier(signature, ec.ECDSA(hashes.SHA256()))
         verifier.update(payload.encode("utf-8"))
         verifier.verify()
+
+        decoded_payload = json.loads(base64.b64decode(payload).decode("utf-8"))
+        client_temp_pub = public_key_from_jwk(decoded_payload["public_key"])
 
         server_temp_pub, server_temp_priv = generate_key_pair()
         session_key = server_temp_priv.exchange(ec.ECDH(), client_temp_pub)
