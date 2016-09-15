@@ -16,7 +16,6 @@ def public_key_to_jwk(public_key):
         "y": b64encodeJWK(int_to_bytes(y)).decode("utf-8"),
         "kty": "EC",
         "ext": True,
-        "key_ops": ["verify"],
         "crv": "P-384"
     }
 
