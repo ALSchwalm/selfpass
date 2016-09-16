@@ -53,30 +53,47 @@ def handle_hello(store, js):
         signature = signature_from_dict(js["signature"])
         payload = js["payload"]
 
+        # Verify the payload with the client's ECDSA public key
         #TODO: just use verify once cryptography 1.5 is in pip
         verifier = client_pub.verifier(signature, ec.ECDSA(hashes.SHA256()))
         verifier.update(payload.encode("utf-8"))
         verifier.verify()
 
+        # Extract the payload (the client's ephemeral ECDH public key)
         decoded_payload = json.loads(base64.b64decode(payload).decode("utf-8"))
         client_temp_pub = public_key_from_jwk(decoded_payload["public_key"])
 
+        # Create temporary keys and do ECDH exchange to create shared secret
         server_temp_pub, server_temp_priv = generate_key_pair()
-        session_key = server_temp_priv.exchange(ec.ECDH(), client_temp_pub)
-        print(base64.b64encode(session_key))
+        session_key = server_temp_priv.exchange(ec.ECDH(), client_temp_pub)[:32]
+
+        # Generate a session ID for this handshake
         session_id = generate_session_id()
 
+        # Derive the actual key from the ECDH value
+        session_key = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            salt=base64.b64decode(session_id),
+            iterations=100000,
+            backend=default_backend()
+        ).derive(session_key)
+
+        # Store the session key - symmetric key pair
         store.add_session_key(session_id, session_key)
 
+        # Build and encode the response payload
         responsePayload = {
-            "public_key": public_key_to_jwk(server_temp_pub)
+            "public_key": public_key_to_jwk(server_temp_pub),
+            "session_id": session_id
         }
-
         encodedResponsePayload = base64.b64encode(
             json.dumps(responsePayload).encode("utf-8"))
 
+        # Get the server's signing key
         _, server_priv = store.get_server_keys()
 
+        # Sign the payload
         #TODO: just use sign once cryptography 1.5 is in pip
         signer = server_priv.signer(ec.ECDSA(hashes.SHA256()))
         signer.update(encodedResponsePayload)
@@ -84,8 +101,7 @@ def handle_hello(store, js):
 
         message = {
             "payload": encodedResponsePayload.decode("utf-8"),
-            "signature": signature_to_dict(signature),
-            "session_id": session_id
+            "signature": signature_to_dict(signature)
         }
 
         return message
