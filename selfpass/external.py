@@ -27,25 +27,40 @@ def symmetric_encrypt(key, plaintext):
         "tag": base64.b64encode(encryptor.tag).decode("utf-8")
     }
 
-def symmetric_decrypt(db, ciphertext_json):
-    key = db.get_access_key_by_id(ciphertext_json["user_id"],
-                                  int(ciphertext_json["access_key_id"], 16))
-
-    iv = base64.b64decode(ciphertext_json["iv"])
-    tag = base64.b64decode(ciphertext_json["tag"])
-    ciphertext = base64.b64decode(ciphertext_json["ciphertext"])
-
+def symmetric_decrypt(ciphertext, iv, tag, key):
     decryptor = Cipher(
         algorithms.AES(key),
         modes.GCM(iv, tag),
         default_backend()
     ).decryptor()
 
-    return key, decryptor.update(ciphertext) + decryptor.finalize()
+    return decryptor.update(ciphertext) + decryptor.finalize()
+
+def symmetric_decrypt_pair_request(db, ciphertext_json):
+    key = db.get_access_key_by_id(ciphertext_json["user_id"],
+                                  int(ciphertext_json["access_key_id"], 16))
+
+    iv = base64.b64decode(ciphertext_json["iv"])
+    tag = base64.b64decode(ciphertext_json["tag"])
+    ciphertext = base64.b64decode(ciphertext_json["ciphertext"])
+    return key, symmetric_decrypt(ciphertext, iv, tag, key)
+
+def symmetric_decrypt_request(db, ciphertext_json):
+    key = db.get_session_key(ciphertext_json["session_id"])
+    iv = base64.b64decode(ciphertext_json["iv"])
+    tag = base64.b64decode(ciphertext_json["tag"])
+    ciphertext = base64.b64decode(ciphertext_json["ciphertext"])
+    return key, symmetric_decrypt(ciphertext, iv, tag, key)
 
 
 def handle_request(store, js):
-    pass
+    try:
+        key, payload = symmetric_decrypt_request(store, js)
+    except:
+        import traceback
+        traceback.print_exc()
+        return "", 400
+
 
 def handle_hello(store, js):
     try:
@@ -69,15 +84,6 @@ def handle_hello(store, js):
 
         # Generate a session ID for this handshake
         session_id = generate_session_id()
-
-        # Derive the actual key from the ECDH value
-        session_key = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=base64.b64decode(session_id),
-            iterations=100000,
-            backend=default_backend()
-        ).derive(session_key)
 
         # Store the session key - symmetric key pair
         store.add_session_key(session_id, session_key)
@@ -113,7 +119,7 @@ def handle_hello(store, js):
 def handle_pair(store, js):
     # First do the decryption on the crypto-layer and get the actual request
     try:
-        key, payload = symmetric_decrypt(store, js)
+        key, payload = symmetric_decrypt_pair_request(store, js)
         request = json.loads(payload.decode("utf-8"))
 
         if request["request"] == "register-device":
