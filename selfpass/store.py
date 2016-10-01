@@ -239,7 +239,7 @@ class Store(object):
     @connected
     def get_session_key(self, conn, cursor, session_id):
         res = cursor.execute("""
-        SELECT session_id FROM session_keys WHERE session_id = ?
+        SELECT session_key FROM session_keys WHERE session_id = ?
         """, (session_id,))
 
         return res.fetchone()[0]
