@@ -56,6 +56,28 @@ def symmetric_decrypt_request(db, ciphertext_json):
 def handle_request(store, js):
     try:
         key, payload = symmetric_decrypt_request(store, js)
+        payload = json.loads(payload.decode("utf-8"))
+        user_id = store.get_user_id_by_session(js["session_id"])
+        print("Payload:", payload)
+        method = payload["request"]
+
+        if method == "retrieve-keystore":
+            keystore = store.get_keystore_by_id(user_id)
+            response = {
+                "response": "OK",
+                "data": keystore
+            }
+        elif method == "update-keystore":
+            store.update_user_keystore(user_id, payload["data"])
+            response = {
+                "response": "OK",
+            }
+        else:
+            #TODO: this should probably error
+            response = ""
+
+        return symmetric_encrypt(key,
+                                 json.dumps(response).encode("utf-8"))
     except:
         import traceback
         traceback.print_exc()
@@ -85,8 +107,8 @@ def handle_hello(store, js):
         # Generate a session ID for this handshake
         session_id = generate_session_id()
 
-        # Store the session key - symmetric key pair
-        store.add_session_key(session_id, session_key)
+        # Store the session key
+        store.add_session_key(session_id, session_key, js["user_id"])
 
         # Build and encode the response payload
         responsePayload = {

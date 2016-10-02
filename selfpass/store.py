@@ -45,7 +45,9 @@ class Store(object):
 
         CREATE TABLE session_keys (
             session_id    TEXT PRIMARY KEY,
-            session_key   TEXT
+            session_key   TEXT,
+            user_id       TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
         );
 
         CREATE TABLE devices (
@@ -101,7 +103,7 @@ class Store(object):
     @connected
     def get_user_by_id(self, conn, cursor, id):
         res = cursor.execute("""
-        SELECT username, user_id, access_key, keystore FROM users WHERE id = ?
+        SELECT username, keystore FROM users WHERE user_id = ?
         """, (id,))
 
         if res is None:
@@ -121,7 +123,7 @@ class Store(object):
 
     @connected
     def get_keystore_by_id(self, conn, cursor, id):
-        return self.get_user_by_id(id)[2]
+        return self.get_user_by_id(id)[1]
 
     @connected
     def get_access_key_by_id(self, conn, cursor, user_id, access_key_id):
@@ -231,15 +233,23 @@ class Store(object):
         """, (user_id, device_id))
 
     @connected
-    def add_session_key(self, conn, cursor, session_id, session_key):
+    def add_session_key(self, conn, cursor, session_id, session_key, user_id):
         cursor.execute("""
-        INSERT INTO session_keys VALUES(?, ?)
-        """, (session_id, session_key))
+        INSERT INTO session_keys VALUES(?, ?, ?)
+        """, (session_id, session_key, user_id))
 
     @connected
     def get_session_key(self, conn, cursor, session_id):
         res = cursor.execute("""
         SELECT session_key FROM session_keys WHERE session_id = ?
+        """, (session_id,))
+
+        return res.fetchone()[0]
+
+    @connected
+    def get_user_id_by_session(self, conn, cursor, session_id):
+        res = cursor.execute("""
+        SELECT user_id FROM session_keys WHERE session_id = ?
         """, (session_id,))
 
         return res.fetchone()[0]
