@@ -53,28 +53,47 @@ def symmetric_decrypt_request(db, ciphertext_json):
     return key, symmetric_decrypt(ciphertext, iv, tag, key)
 
 
+def handle_retrieve_keystore(store, payload, user_id):
+    keystore = store.get_keystore_by_id(user_id)
+    return {
+        "response": "OK",
+        "data": keystore
+    }
+
+def handle_update_keystore(store, payload, user_id):
+    keystore = store.get_keystore_by_id(user_id)
+    data = json.loads(payload["data"])
+
+    print("Encrypted keystore before update:", keystore)
+    if keystore is not None:
+        keystore = json.loads(keystore)
+        if data["based_on"] != keystore["tag"]:
+            return {
+                "response": "OUTDATED"
+            }
+
+    store.update_user_keystore(user_id, json.dumps(data["keystore"]))
+    return {
+        "response": "OK",
+    }
+
 def handle_request(store, js):
     try:
         key, payload = symmetric_decrypt_request(store, js)
         payload = json.loads(payload.decode("utf-8"))
         user_id = store.get_user_id_by_session(js["session_id"])
+
         print("Payload:", payload)
         method = payload["request"]
 
         if method == "retrieve-keystore":
-            keystore = store.get_keystore_by_id(user_id)
-            response = {
-                "response": "OK",
-                "data": keystore
-            }
+            response = handle_retrieve_keystore(store, payload, user_id)
         elif method == "update-keystore":
-            store.update_user_keystore(user_id, payload["data"])
-            response = {
-                "response": "OK",
-            }
+            response = handle_update_keystore(store, payload, user_id)
         else:
-            #TODO: this should probably error
-            response = ""
+            response = {
+                "response": "ERROR"
+            }
 
         return symmetric_encrypt(key,
                                  json.dumps(response).encode("utf-8"))
