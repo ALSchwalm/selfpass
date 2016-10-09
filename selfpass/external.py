@@ -55,6 +55,13 @@ def symmetric_decrypt_request(db, ciphertext_json):
 
 def handle_retrieve_keystore(store, payload, user_id):
     keystore = store.get_keystore_by_id(user_id)
+
+    if keystore is not None:
+        current_keystore = json.loads(keystore)
+        if payload["data"]["current"] == current_keystore["tag"]:
+            return {
+                "response": "CURRENT"
+            }
     return {
         "response": "OK",
         "data": keystore
@@ -66,8 +73,8 @@ def handle_update_keystore(store, payload, user_id):
 
     print("Encrypted keystore before update:", keystore)
     if keystore is not None:
-        keystore = json.loads(keystore)
-        if data["based_on"] != keystore["tag"]:
+        current_keystore = json.loads(keystore)
+        if data["based_on"] != current_keystore["tag"]:
             return {
                 "response": "OUTDATED"
             }
